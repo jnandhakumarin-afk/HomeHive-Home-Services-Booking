@@ -63,8 +63,24 @@ const billSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed"],
+      enum: ["pending", "payment_submitted", "paid", "failed"],
       default: "pending"
+    },
+
+    paymentMethod: {
+      type: String,
+      enum: ["upi", "cash", "none"],
+      default: "none"
+    },
+
+    transactionId: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+
+    paidAt: {
+      type: Date
     }
   },
   {

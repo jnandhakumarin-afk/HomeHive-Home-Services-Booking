@@ -46,6 +46,7 @@ import MessagesPage from "./pages/MessagesPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
+import LocationModal from "./components/LocationModal.jsx";
 import "./App.css";
 
 const menuItems = [
@@ -132,6 +133,24 @@ function App() {
   };
 
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("homehive_selected_location") || "null") || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleSelectLocation = (loc) => {
+    setSelectedLocation(loc);
+    try {
+      localStorage.setItem("homehive_selected_location", JSON.stringify(loc));
+    } catch {
+      // ignore
+    }
+    setShowLocationModal(false);
+  };
 
   useEffect(() => {
     if (!user) return undefined;
@@ -336,7 +355,7 @@ function App() {
           {/* User */}
 
           <div className="sidebar-user">
-            <div className="sidebar-user-avatar">HH</div>
+            <div className="sidebar-user-avatar">{(user.name || "U").charAt(0).toUpperCase()}</div>
 
             <div className="sidebar-user-info">
               <strong>{user.name}</strong>
@@ -380,10 +399,10 @@ function App() {
 
             {/* Location */}
 
-            <button className="location-box" onClick={() => handleMenuClick("Services")}>
+            <button className="location-box" onClick={() => setShowLocationModal(true)}>
               <MapPin size={18} />
 
-              <span>Service area</span>
+              <span>{selectedLocation?.city || "Service area"}</span>
 
               <ChevronDown size={15} />
             </button>
@@ -399,7 +418,7 @@ function App() {
             {/* Profile */}
 
             <button className="top-profile" aria-label="Open profile" onClick={() => handleMenuClick("Profile")}>
-              <div className="top-profile-avatar">HH</div>
+              <div className="top-profile-avatar">{(user.name || "U").charAt(0).toUpperCase()}</div>
 
               <div className="top-profile-text">
                 <strong>{user.name}</strong>
@@ -415,7 +434,7 @@ function App() {
 
         <main className="dashboard">
           {activeMenu === "Dashboard" && dashboardError && <p className="workspace-alert" role="alert">Some dashboard details could not be loaded: {dashboardError}</p>}
-          {activeMenu === "Services" ? <ServicesPage user={user} initialCategory={serviceCategory} searchTerm={serviceSearchTerm} /> : activeMenu === "Service Passport" ? <PassportPage /> : activeMenu === "Bookings" ? <BookingsPage user={user} /> : activeMenu === "Messages" ? <MessagesPage user={user} /> : activeMenu === "Notifications" ? <NotificationsPage /> : activeMenu === "Profile" ? <ProfilePage /> : activeMenu === "Settings" ? <SettingsPage darkMode={darkMode} setDarkMode={setDarkMode} /> : activeMenu === "Billing" && (user.role === "customer" || user.role === "admin") ? <BillingPage /> : activeMenu === "Provider Profile" && user.role === "provider" ? <ProviderPage /> : activeMenu === "Admin" && user.role === "admin" ? <AdminPage /> : <>
+          {activeMenu === "Services" ? <ServicesPage user={user} initialCategory={serviceCategory} searchTerm={serviceSearchTerm} selectedLocation={selectedLocation} onOpenLocation={() => setShowLocationModal(true)} /> : activeMenu === "Service Passport" ? <PassportPage /> : activeMenu === "Bookings" ? <BookingsPage user={user} /> : activeMenu === "Messages" ? <MessagesPage user={user} /> : activeMenu === "Notifications" ? <NotificationsPage /> : activeMenu === "Profile" ? <ProfilePage /> : activeMenu === "Settings" ? <SettingsPage darkMode={darkMode} setDarkMode={setDarkMode} /> : activeMenu === "Billing" ? <BillingPage user={user} /> : activeMenu === "Provider Profile" && user.role === "provider" ? <ProviderPage /> : activeMenu === "Admin" && user.role === "admin" ? <AdminPage /> : <>
           {/* Hero */}
 
           <section className="hero-section">
@@ -660,6 +679,14 @@ function App() {
           </>}
         </main>
       </div>
+
+      {showLocationModal && (
+        <LocationModal
+          selectedLocation={selectedLocation}
+          onSelect={handleSelectLocation}
+          onClose={() => setShowLocationModal(false)}
+        />
+      )}
     </div>
   );
 }

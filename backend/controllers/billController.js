@@ -1,6 +1,7 @@
 const Bill = require("../models/Bill");
 const Booking = require("../models/Booking");
 const Provider = require("../models/Provider");
+const createNotification = require("../utils/notificationHelper");
 
 const createBill = async (req, res) => {
   try {
@@ -100,6 +101,14 @@ const createBill = async (req, res) => {
       totalAmount
     });
 
+    await createNotification({
+      user: bookingData.customer,
+      title: "New Bill Created",
+      message: `A bill of ₹${totalAmount} has been generated for your completed service.`,
+      type: "booking",
+      relatedId: bill._id
+    });
+
     res.status(201).json({
       message: "Bill created successfully",
       bill
@@ -113,13 +122,61 @@ const createBill = async (req, res) => {
   }
 };
 
+const getBills = async (req, res) => {
+  try {
+    let filter = {};
+
+    if (req.user.role === "customer") {
+      filter.customer = req.user.userId;
+    } else if (req.user.role === "provider") {
+      const provider = await Provider.findOne({ user: req.user.userId });
+      if (!provider) {
+        return res.json({ message: "Bills fetched successfully", bills: [] });
+      }
+      filter.provider = provider._id;
+    }
+
+    const bills = await Bill.find(filter)
+      .populate("customer", "name email phone")
+      .populate({
+        path: "provider",
+        select: "businessName upiId phone user location"
+      })
+      .populate({
+        path: "booking",
+        populate: [
+          { path: "service", select: "name category basePrice" },
+          { path: "appliance", select: "name brand category" },
+          { path: "home", select: "name address city" }
+        ]
+      })
+      .sort({ createdAt: -1 });
+
+    res.json({
+      message: "Bills fetched successfully",
+      bills
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch bills",
+      error: error.message
+    });
+  }
+};
 
 const getBill = async (req, res) => {
   try {
     const bill = await Bill.findById(req.params.id)
       .populate("customer", "name email phone")
       .populate("provider")
-      .populate("booking");
+      .populate({
+        path: "booking",
+        populate: [
+          { path: "service", select: "name category basePrice" },
+          { path: "appliance", select: "name brand category" },
+          { path: "home", select: "name address city" }
+        ]
+      });
 
     if (!bill) {
       return res.status(404).json({
@@ -151,25 +208,31 @@ const getBill = async (req, res) => {
   }
 };
 
-
 const getBillByBooking = async (req, res) => {
   try {
     const bill = await Bill.findOne({ booking: req.params.bookingId })
       .populate("customer", "name email phone")
-      .populate("provider", "businessName user")
-      .populate("booking", "date time status");
+      .populate("provider", "businessName upiId user")
+      .populate({
+        path: "booking",
+        populate: [
+          { path: "service", select: "name category basePrice" },
+          { path: "appliance", select: "name brand category" },
+          { path: "home", select: "name address city" }
+        ]
+      });
 
     if (!bill) {
       return res.status(404).json({ message: "Bill not found" });
     }
 
     const customerId = bill.customer._id || bill.customer;
-    const providerUserId = bill.provider.user;
+    const providerUserId = bill.provider?.user;
 
     if (
       req.user.role !== "admin" &&
       customerId.toString() !== req.user.userId &&
-      providerUserId.toString() !== req.user.userId
+      (!providerUserId || providerUserId.toString() !== req.user.userId)
     ) {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -185,9 +248,10 @@ const getBillByBooking = async (req, res) => {
 
 const updatePaymentStatus = async (req, res) => {
   try {
-    const { paymentStatus } = req.body;
+    const { paymentStatus, paymentMethod, transactionId } = req.body;
 
-    const bill = await Bill.findById(req.params.id);
+    const bill = await Bill.findById(req.params.id)
+      .populate("provider");
 
     if (!bill) {
       return res.status(404).json({
@@ -195,26 +259,103 @@ const updatePaymentStatus = async (req, res) => {
       });
     }
 
-    if (
-      req.user.role !== "admin" &&
-      bill.customer.toString() !== req.user.userId
-    ) {
-      return res.status(403).json({
-        message: "Only the customer who owns this bill can update payment status"
-      });
+    const customerId = bill.customer.toString();
+    const providerUserId = bill.provider?.user?.toString();
+    const isCustomer = req.user.role === "customer" && customerId === req.user.userId;
+    const isProvider = req.user.role === "provider" && providerUserId === req.user.userId;
+    const isAdmin = req.user.role === "admin";
+
+    if (!isCustomer && !isProvider && !isAdmin) {
+      return res.status(403).json({ message: "Access denied" });
     }
 
-    if (!["pending", "paid", "failed"].includes(paymentStatus)) {
+    if (!["pending", "payment_submitted", "paid", "failed"].includes(paymentStatus)) {
       return res.status(400).json({ message: "Invalid payment status" });
     }
 
+    // Customer can only submit payment (or cancel submission)
+    if (isCustomer) {
+      if (paymentStatus === "paid") {
+        return res.status(403).json({ message: "Only the service provider or admin can verify and mark a bill as PAID" });
+      }
+
+      bill.paymentStatus = paymentStatus;
+      if (paymentMethod) bill.paymentMethod = paymentMethod;
+      if (transactionId !== undefined) bill.transactionId = transactionId.trim();
+
+      await bill.save();
+
+      // Notify the provider
+      if (paymentStatus === "payment_submitted" && providerUserId) {
+        await createNotification({
+          user: providerUserId,
+          title: "Payment Received / Awaiting Verification",
+          message: `Customer submitted payment (Ref: ${transactionId || "Cash"}) for ₹${bill.totalAmount}. Please verify and mark as Paid.`,
+          type: "booking",
+          relatedId: bill._id
+        });
+      }
+
+      const populatedBill = await Bill.findById(bill._id)
+        .populate("customer", "name email phone")
+        .populate("provider", "businessName upiId user")
+        .populate({
+          path: "booking",
+          populate: [
+            { path: "service", select: "name category basePrice" },
+            { path: "appliance", select: "name brand category" },
+            { path: "home", select: "name address city" }
+          ]
+        });
+
+      return res.json({
+        message: "Payment submission recorded. Awaiting provider verification.",
+        bill: populatedBill
+      });
+    }
+
+    // Provider or Admin can mark as paid or update status
     bill.paymentStatus = paymentStatus;
+    if (paymentMethod) bill.paymentMethod = paymentMethod;
+    if (transactionId !== undefined) bill.transactionId = transactionId.trim();
+
+    if (paymentStatus === "paid") {
+      bill.paidAt = new Date();
+
+      // Increment completed jobs on the provider
+      if (bill.provider?._id) {
+        await Provider.findByIdAndUpdate(bill.provider._id, {
+          $inc: { completedJobs: 1 }
+        });
+      }
+
+      // Notify customer
+      await createNotification({
+        user: customerId,
+        title: "Payment Verified & Completed",
+        message: `Your payment of ₹${bill.totalAmount} has been verified and confirmed by the provider. Thank you!`,
+        type: "booking",
+        relatedId: bill._id
+      });
+    }
 
     await bill.save();
 
+    const populatedBill = await Bill.findById(bill._id)
+      .populate("customer", "name email phone")
+      .populate("provider", "businessName upiId user")
+      .populate({
+        path: "booking",
+        populate: [
+          { path: "service", select: "name category basePrice" },
+          { path: "appliance", select: "name brand category" },
+          { path: "home", select: "name address city" }
+        ]
+      });
+
     res.json({
       message: "Payment status updated successfully",
-      bill
+      bill: populatedBill
     });
 
   } catch (error) {
@@ -225,9 +366,9 @@ const updatePaymentStatus = async (req, res) => {
   }
 };
 
-
 module.exports = {
   createBill,
+  getBills,
   getBill,
   getBillByBooking,
   updatePaymentStatus

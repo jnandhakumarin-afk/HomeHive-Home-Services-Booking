@@ -14,7 +14,8 @@ const createProvider = async (req, res) => {
       hourlyRate,
       location,
       serviceAreas,
-      description
+      description,
+      upiId
     } = req.body;
 
     const existingProvider = await Provider.findOne({
@@ -36,7 +37,8 @@ const createProvider = async (req, res) => {
       hourlyRate,
       location,
       serviceAreas,
-      description
+      description,
+      upiId: upiId ? upiId.trim() : ""
     });
 
     res.status(201).json({
@@ -85,10 +87,10 @@ const getProviders = async (req, res) => {
     }
 
     if (location) {
-      filter.location = {
-        $regex: location,
-        $options: "i"
-      };
+      filter.$or = [
+        { location: { $regex: location, $options: "i" } },
+        { serviceAreas: { $regex: location, $options: "i" } }
+      ];
     }
 
     if (category) {
@@ -156,7 +158,8 @@ const updateMyProvider = async (req, res) => {
       "location",
       "serviceAreas",
       "description",
-      "isAvailable"
+      "isAvailable",
+      "upiId"
     ];
 
     fields.forEach((field) => {

@@ -10,7 +10,7 @@ function getId(value) {
   return value?._id || value || "";
 }
 
-export default function ServicesPage({ user, initialCategory = "Repair", searchTerm = "" }) {
+export default function ServicesPage({ user, initialCategory = "Repair", searchTerm = "", selectedLocation, onOpenLocation }) {
   const [services, setServices] = useState([]);
   const [providers, setProviders] = useState([]);
   const [homes, setHomes] = useState([]);
@@ -94,6 +94,8 @@ export default function ServicesPage({ user, initialCategory = "Repair", searchT
     ? serviceId
     : visibleServices[0]?._id || "";
 
+  const effectiveLocation = locationQuery.trim() || selectedLocation?.city?.trim() || "";
+
   const visibleProviders = useMemo(() => providers.filter((provider) => {
     const categories = provider.categories || [];
     const skills = provider.skills || [];
@@ -103,9 +105,9 @@ export default function ServicesPage({ user, initialCategory = "Repair", searchT
     const providerAreas = [provider.location, ...(provider.serviceAreas || [])].filter(Boolean).join(" ").toLowerCase();
     const searchableProfile = `${provider.businessName} ${skills.join(" ")} ${categories.join(" ")}`.toLowerCase();
     return matchesCategory &&
-      (!locationQuery.trim() || providerAreas.includes(locationQuery.trim().toLowerCase())) &&
+      (!effectiveLocation || providerAreas.includes(effectiveLocation.toLowerCase())) &&
       (!searchTerm.trim() || searchableProfile.includes(searchTerm.trim().toLowerCase()));
-  }), [category, locationQuery, providers, searchTerm]);
+  }), [category, effectiveLocation, providers, searchTerm]);
   const selectedProvider = providers.find((provider) => provider._id === providerId);
 
   const selectedAvailability = availability.find((item) =>
@@ -114,7 +116,20 @@ export default function ServicesPage({ user, initialCategory = "Repair", searchT
   const availableTimes = (selectedAvailability?.timeSlots || [])
     .filter((slot) => !slot.isBooked)
     .map((slot) => slot.time);
-  const homeAssets = assets.filter((asset) => getId(asset.home) === homeId);
+
+  const homeAssets = useMemo(() => {
+    const forHome = assets.filter((asset) => getId(asset.home) === homeId);
+    if (!category || category === "Repair" || category === "Maintenance") {
+      return forHome;
+    }
+    const catWords = category.toLowerCase().split(/\s+/);
+    const matched = forHome.filter((asset) => {
+      const assetCat = (asset.category || "").toLowerCase();
+      const assetName = (asset.name || "").toLowerCase();
+      return catWords.some((kw) => assetCat.includes(kw) || assetName.includes(kw));
+    });
+    return matched.length > 0 ? matched : forHome;
+  }, [assets, category, homeId]);
 
   const selectProvider = (provider, focusBooking = false) => {
     setProviderId(provider._id);
@@ -164,7 +179,27 @@ export default function ServicesPage({ user, initialCategory = "Repair", searchT
           </button>
         ))}
       </div>
-      <label className="workspace-search-field"><MapPin size={16} /><input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Filter providers by city or service area" aria-label="Filter providers by city or service area" /></label>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <label className="workspace-search-field" style={{ flex: 1 }}>
+          <MapPin size={16} />
+          <input
+            value={locationQuery}
+            onChange={(event) => setLocationQuery(event.target.value)}
+            placeholder={selectedLocation?.city ? `Filtering by: ${selectedLocation.city}` : "Filter providers by city or service area"}
+            aria-label="Filter providers by city or service area"
+          />
+        </label>
+        {selectedLocation?.city && !locationQuery && (
+          <button
+            type="button"
+            className="workspace-button secondary"
+            style={{ whiteSpace: "nowrap", fontSize: "12px", padding: "8px 14px" }}
+            onClick={onOpenLocation}
+          >
+            <MapPin size={14} /> Change area
+          </button>
+        )}
+      </div>
 
       {error && <p className="workspace-alert" role="alert">{error}</p>}
       {message && <p className="workspace-success" role="status">{message}</p>}

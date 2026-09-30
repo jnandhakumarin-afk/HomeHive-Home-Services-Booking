@@ -108,6 +108,18 @@ const createBooking = async (req, res) => {
 
     await availability.save();
 
+    // Notify provider
+    const providerDoc = await Provider.findById(provider);
+    if (providerDoc?.user) {
+      await createNotification({
+        user: providerDoc.user,
+        title: "New Booking Request",
+        message: `You have received a new booking request for ${date} at ${time}.`,
+        type: "booking",
+        relatedId: booking._id
+      });
+    }
+
     res.status(201).json({
       message: "Booking request sent successfully",
       booking

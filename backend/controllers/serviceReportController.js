@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const Provider = require("../models/Provider");
 const Appliance = require("../models/Appliance");
 const Home = require("../models/Home");
+const createNotification = require("../utils/notificationHelper");
 
 const createServiceReport = async (req, res) => {
   try {
@@ -50,10 +51,15 @@ const createServiceReport = async (req, res) => {
       });
     }
 
-    if (bookingData.status !== "completed") {
+    if (bookingData.status !== "completed" && bookingData.status !== "in_progress") {
       return res.status(400).json({
-        message: "Service must be completed before creating report"
+        message: "Service must be in progress or completed before creating report"
       });
+    }
+
+    if (bookingData.status === "in_progress") {
+      bookingData.status = "completed";
+      await bookingData.save();
     }
 
     const existingReport = await ServiceReport.findOne({
@@ -103,6 +109,14 @@ const createServiceReport = async (req, res) => {
     }
 
     await Appliance.findByIdAndUpdate(bookingData.appliance, applianceUpdate);
+
+    await createNotification({
+      user: bookingData.customer,
+      title: "Service Completed",
+      message: `Your service for booking #${bookingData._id.toString().slice(-6)} has been completed. Bill and report are now available.`,
+      type: "booking",
+      relatedId: bookingData._id
+    });
 
     res.status(201).json({
       message: "Service report created successfully",

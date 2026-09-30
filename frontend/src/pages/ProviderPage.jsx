@@ -3,7 +3,7 @@ import { BriefcaseBusiness, CalendarDays, Save } from "lucide-react";
 
 import { apiRequest } from "../services/api.js";
 
-const emptyProfile = { businessName: "", skills: "", categories: "", experience: "0", hourlyRate: "0", location: "", serviceAreas: "", description: "" };
+const emptyProfile = { businessName: "", skills: "", categories: "", experience: "0", hourlyRate: "0", location: "", serviceAreas: "", description: "", upiId: "" };
 const minimumAvailabilityDate = new Date().toISOString().slice(0, 10);
 
 export default function ProviderPage() {
@@ -48,7 +48,8 @@ export default function ProviderPage() {
         hourlyRate: Number(form.hourlyRate || 0),
         location: form.location.trim(),
         serviceAreas: parseList(form.serviceAreas),
-        description: form.description.trim()
+        description: form.description.trim(),
+        upiId: form.upiId.trim()
       };
       const data = profile
         ? await apiRequest("/providers/me", { method: "PATCH", body })
@@ -100,6 +101,12 @@ export default function ProviderPage() {
         <Field label="Hourly rate" type="number" min="0" value={form.hourlyRate} onChange={(hourlyRate) => setForm((current) => ({ ...current, hourlyRate }))} />
         <Field label="Service areas (comma separated)" value={form.serviceAreas} onChange={(serviceAreas) => setForm((current) => ({ ...current, serviceAreas }))} />
         <Field label="Description" value={form.description} onChange={(description) => setForm((current) => ({ ...current, description }))} />
+        <Field
+          label="UPI ID (for receiving customer payments)"
+          value={form.upiId}
+          onChange={(upiId) => setForm((current) => ({ ...current, upiId }))}
+          placeholder="e.g. yourname@okaxis, 9876543210@paytm"
+        />
       </div>
       <button className="workspace-button primary provider-save" disabled={saving}><Save size={15} />{saving ? "Saving..." : profile ? "Save profile" : "Create profile"}</button>
     </form>
@@ -139,6 +146,7 @@ function toForm(profile) {
     hourlyRate: String(profile.hourlyRate || 0),
     location: profile.location || "",
     serviceAreas: (profile.serviceAreas || []).join(", "),
-    description: profile.description || ""
+    description: profile.description || "",
+    upiId: profile.upiId || ""
   };
 }

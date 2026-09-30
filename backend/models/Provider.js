@@ -70,6 +70,12 @@ const providerSchema = new mongoose.Schema(
 
     description: {
       type: String
+    },
+
+    upiId: {
+      type: String,
+      trim: true,
+      default: ""
     }
   },
   {
